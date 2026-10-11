@@ -8,8 +8,8 @@ plugins {
     `maven-publish`
 }
 
-val groupId = "no.iktdev.library"
-val artifactName = "files"
+val groupId = "no.iktdev"
+val artifactName = "file"
 val fallbackVersion = "1.0.0-SNAPSHOT"
 
 group = groupId
