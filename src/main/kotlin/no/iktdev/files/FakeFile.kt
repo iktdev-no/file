@@ -7,6 +7,8 @@ import java.io.PrintWriter
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.FileSystemException
 import java.nio.file.Paths
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 
 class FakeFile(
     override var path: String,
@@ -14,6 +16,7 @@ class FakeFile(
     private var size: Long = 0,
     private var directory: Boolean = false,
     private var content: String = "",
+    private var bytes: ByteArray = content.toByteArray(Charsets.UTF_8),
     private var modified: Long = System.currentTimeMillis(),
     private var writable: Boolean = true
 ) : IFile {
@@ -67,18 +70,20 @@ class FakeFile(
     override fun readText(): String = ref().content
     override fun lastModified(): Long = ref().modified
     override fun canRead(): Boolean {
-        return true
+        return ref().exists
     }
 
     override fun canWrite(): Boolean {
-        return true
+        val r = ref()
+        return r.exists && r.writable
     }
 
     override fun writeText(text: String) {
         val r = ref()
         r.exists = true
         r.content = text
-        r.size = text.toByteArray().size.toLong()
+        r.bytes = text.toByteArray(Charsets.UTF_8)
+        r.size = r.bytes.size.toLong()
         r.modified = System.currentTimeMillis()
     }
 
@@ -86,7 +91,8 @@ class FakeFile(
         val r = ref()
         r.exists = true
         r.content += "$text\n"
-        r.size = r.content.toByteArray().size.toLong()
+        r.bytes = r.content.toByteArray(Charsets.UTF_8)
+        r.size = r.bytes.size.toLong()
         r.modified = System.currentTimeMillis()
     }
 
@@ -107,7 +113,8 @@ class FakeFile(
 
     override fun setWritable(state: Boolean): Boolean {
         val r = ref()
-        return r.setWritable(state)
+        r.writable = state
+        return true
     }
 
     override fun mkdirs(): Boolean {
@@ -118,17 +125,19 @@ class FakeFile(
         val r = ref()
         r.exists = false
         r.content = ""
+        r.bytes = byteArrayOf()
         r.size = 0
         return true
     }
 
     override fun deleteRecursively(): Boolean {
-        val prefix = absolutePath
+        val prefix = absolutePath.trimEnd('/') + "/"
         fileRegistry.values
-            .filter { it.absolutePath.startsWith(prefix) }
+            .filter { it.absolutePath == absolutePath || it.absolutePath.startsWith(prefix) }
             .forEach {
                 it.exists = false
                 it.content = ""
+                it.bytes = byteArrayOf()
                 it.size = 0
             }
         delete()
@@ -156,6 +165,7 @@ class FakeFile(
         val prefix = if (absolutePath.endsWith("/")) absolutePath else "$absolutePath/"
         return fileRegistry.values
             .filter { it.absolutePath.startsWith(prefix) }
+            .filter { it.exists }
             .filter { child ->
                 // relative path after root
                 val rel = child.absolutePath.removePrefix(prefix)
@@ -167,7 +177,8 @@ class FakeFile(
 
     override fun walk(): Sequence<IFile> =
         fileRegistry.values
-            .filter { it.absolutePath.startsWith(absolutePath) }
+            .filter { it.exists }
+            .filter { it.absolutePath == absolutePath || it.absolutePath.startsWith(absolutePath.trimEnd('/') + "/") }
             .asSequence()
 
     override fun printWriter(): PrintWriter =
@@ -177,7 +188,8 @@ class FakeFile(
                 val r = ref()
                 r.exists = true
                 r.content += str
-                r.size = r.content.toByteArray().size.toLong()
+                r.bytes = r.content.toByteArray(Charsets.UTF_8)
+                r.size = r.bytes.size.toLong()
                 r.modified = System.currentTimeMillis()
             }
 
@@ -195,7 +207,8 @@ class FakeFile(
         r.exists = true
         r.directory = false
         r.size = bytes.size.toLong()
-        r.content = String(bytes) // lagres som binær data i string-form
+        r.bytes = bytes.copyOf()
+        r.content = String(bytes, Charsets.UTF_8)
         r.modified = System.currentTimeMillis()
     }
 
@@ -209,7 +222,7 @@ class FakeFile(
     }
 
     override fun setLastModified(time: Long) {
-        this.modified = time
+        ref().modified = time
     }
 
     override fun renameTo(dest: IFile): Boolean {
@@ -234,26 +247,7 @@ class FakeFile(
 
     override fun openInputStream(): InputStream {
         val r = ref()
-        val bytes = r.content.toByteArray()
-        return object : InputStream() {
-            var pos = 0
-
-            override fun read(): Int {
-                return if (pos < bytes.size) {
-                    bytes[pos++].toInt() and 0xFF
-                } else {
-                    -1
-                }
-            }
-
-            override fun read(b: ByteArray, off: Int, len: Int): Int {
-                if (pos >= bytes.size) return -1
-                val toCopy = minOf(len, bytes.size - pos)
-                System.arraycopy(bytes, pos, b, off, toCopy)
-                pos += toCopy
-                return toCopy
-            }
-        }
+        return ByteArrayInputStream(r.bytes.copyOf())
     }
 
     override fun openOutputStream(): OutputStream {
@@ -261,20 +255,20 @@ class FakeFile(
         r.exists = true
 
         return object : OutputStream() {
-            private val buffer = StringBuilder()
+            private val buffer = ByteArrayOutputStream()
 
             override fun write(b: Int) {
-                buffer.append(b.toChar())
+                buffer.write(b)
             }
 
             override fun write(b: ByteArray, off: Int, len: Int) {
-                buffer.append(String(b, off, len))
+                buffer.write(b, off, len)
             }
 
             override fun flush() {
-                val newContent = buffer.toString()
-                r.content += newContent
-                r.size = r.content.toByteArray().size.toLong()
+                r.bytes = buffer.toByteArray()
+                r.content = String(r.bytes, Charsets.UTF_8)
+                r.size = r.bytes.size.toLong()
                 r.modified = System.currentTimeMillis()
             }
 
