@@ -37,6 +37,12 @@ interface IFile {
 
     fun toPath(): Path = Paths.get(this.absolutePath)
 
+    /** Returns this path with `.` and `..` segments collapsed, without following symbolic links. */
+    fun normalized(): IFile = IFile(toPath().normalize().toString())
+
+    /** Resolves symbolic links and returns the existing filesystem object's canonical path. */
+    fun realPath(): Path
+
     fun toJavaFile(): File
 
     fun readText(): String

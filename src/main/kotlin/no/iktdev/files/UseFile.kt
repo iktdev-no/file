@@ -6,6 +6,7 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.io.PrintWriter
 import java.security.MessageDigest
+import java.nio.file.Path
 
 class UseFile(path: String) : IFile {
 
@@ -25,6 +26,8 @@ class UseFile(path: String) : IFile {
 
     override val absolutePath: String
         get() = file.absolutePath
+
+    override fun realPath(): Path = file.toPath().toRealPath()
 
     override val parentFile: IFile
         get() = IFile(parent!!)

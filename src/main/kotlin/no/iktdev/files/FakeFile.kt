@@ -9,6 +9,7 @@ import java.nio.file.FileSystemException
 import java.nio.file.Paths
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.nio.file.Path
 
 class FakeFile(
     override var path: String,
@@ -20,6 +21,8 @@ class FakeFile(
     private var modified: Long = System.currentTimeMillis(),
     private var writable: Boolean = true
 ) : IFile {
+
+    private var symbolicLinkTarget: String? = null
 
     init {
         if (!directory) {
@@ -51,6 +54,35 @@ class FakeFile(
 
     override val absolutePath: String
         get() = path
+
+    override fun realPath(): Path {
+        var current = Paths.get(absolutePath).toAbsolutePath().normalize()
+        repeat(40) {
+            var replacedLink = false
+            var prefix = current.root ?: Paths.get("")
+            val segments = current.iterator().asSequence().toList()
+            for ((index, segment) in segments.withIndex()) {
+                prefix = prefix.resolve(segment)
+                val entry = fileRegistry[prefix.normalize().toString()]
+                val target = entry?.symbolicLinkTarget ?: continue
+                val targetPath = Paths.get(target).let { if (it.isAbsolute) it else prefix.parent.resolve(it) }
+                current = targetPath.resolve(segments.drop(index + 1).joinToString("/")).normalize()
+                replacedLink = true
+                break
+            }
+            if (replacedLink) return@repeat
+            val entry = fileRegistry[current.toString()]
+                ?: throw java.nio.file.NoSuchFileException(current.toString())
+            if (!entry.exists) throw java.nio.file.NoSuchFileException(current.toString())
+            return current
+        }
+        throw FileSystemException(absolutePath, null, "Too many symbolic links")
+    }
+
+    /** Marks this fake path as a symbolic link for canonical-path tests. */
+    fun symbolicLinkTo(target: String) {
+        ref().symbolicLinkTarget = target
+    }
 
     override val nameWithoutExtension: String
         get() = name.substringBeforeLast('.', name)

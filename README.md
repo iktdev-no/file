@@ -31,6 +31,16 @@ fun setUp() {
 
 `FakeFile` is intentionally a test implementation, not a full emulation of every platform filesystem behavior. `toJavaFile()` is unsupported by the fake.
 
+`IFile.normalized()` collapses `.` and `..` path segments without following symbolic links. `IFile.realPath()` follows symbolic links and requires the target to exist. To check that a referenced file stays under a root directory, compare canonical `Path` values:
+
+```kotlin
+val root = contentFolder.realPath()
+val candidate = contentFolder.resolve("media/video.mkv").realPath()
+require(candidate.startsWith(root))
+```
+
+`FakeFile.symbolicLinkTo()` can model links in tests; `realPath()` resolves those links against the fake file registry.
+
 ## Publish
 
 Publish locally with:
